@@ -16,7 +16,7 @@ import click
 
 from tqdm import tqdm
 from tzlocal import get_localzone
-from pyicloud_ipd.exceptions import PyiCloudAPIResponseError
+from pyicloud.exceptions import PyiCloudAPIResponseException
 
 from icloudpd.logger import setup_logger
 from icloudpd.authentication import authenticate, TwoStepAuthRequiredError
@@ -288,7 +288,7 @@ def main(
     # case exit.
     try:
         photos = icloud.photos.albums[album]
-    except PyiCloudAPIResponseError as err:
+    except PyiCloudAPIResponseException as err:
         # For later: come up with a nicer message to the user. For now take the
         # exception text
         print(err)
@@ -374,15 +374,16 @@ def main(
 
     def download_photo(counter, photo):
         """internal function for actually downloading the photos"""
-        if skip_videos and photo.item_type != "image":
+        if skip_videos and photo.versions["original"]["type"] != "public.jpeg":
             logger.set_tqdm_description(
                 "Skipping %s, only downloading photos." % photo.filename
             )
             return
-        if photo.item_type != "image" and photo.item_type != "movie":
+
+        if photo.versions["original"]["type"] != "public.jpeg" and photo.versions["original"]["type"] != "com.apple.quicktime-movie":
             logger.set_tqdm_description(
                 "Skipping %s, only downloading photos and videos. "
-                "(Item type was: %s)" % (photo.filename, photo.item_type)
+                "(Item type was: %s)" % (photo.filename, photo.versions["original"]["type"])
             )
             return
         try:

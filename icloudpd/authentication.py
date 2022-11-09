@@ -2,9 +2,9 @@
 
 import sys
 import click
-import pyicloud_ipd
+import pyicloud
 from icloudpd.logger import setup_logger
-
+from pyicloud.utils import get_password, password_exists_in_keyring, get_password_from_keyring, store_password_in_keyring
 
 class TwoStepAuthRequiredError(Exception):
     """
@@ -26,19 +26,29 @@ def authenticate(
     try:
         # If password not provided on command line variable will be set to None
         # and PyiCloud will attempt to retrieve from it's keyring
-        icloud = pyicloud_ipd.PyiCloudService(
+        icloud = pyicloud.PyiCloudService(
             username, password,
             cookie_directory=cookie_directory,
             client_id=client_id)
-    except pyicloud_ipd.exceptions.NoStoredPasswordAvailable:
+    except pyicloud.exceptions.PyiCloudNoStoredPasswordAvailableException:
         # Prompt for password if not stored in PyiCloud's keyring
-        password = click.prompt("iCloud Password", hide_input=True)
-        icloud = pyicloud_ipd.PyiCloudService(
+        password = get_password(
+                username, interactive=True
+            )
+
+        print(password)
+        icloud = pyicloud.PyiCloudService(
             username, password,
             cookie_directory=cookie_directory,
             client_id=client_id)
 
-    if icloud.requires_2sa:
+        if not password_exists_in_keyring(username):
+            store_password_in_keyring(username, password)
+
+    if icloud.requires_2fa:
+        request_2fa(icloud, logger)	
+
+    elif icloud.requires_2sa:
         if raise_error_on_2sa:
             raise TwoStepAuthRequiredError(
                 "Two-step/two-factor authentication is required!"
@@ -47,6 +57,18 @@ def authenticate(
         request_2sa(icloud, logger)
     return icloud
 
+def request_2fa(icloud, logger):
+    code = click.prompt("Please enter two-factor authentication code")
+    if not icloud.validate_2fa_code(code):
+        logger.error("Failed to verify two-factor authentication code")
+        sys.exit(1)
+    logger.info(
+        "Great, you're all set up. The script can now be run without "
+        "user interaction until 2SA expires.\n"
+        "You can set up email notifications for when "
+        "the two-step authentication expires.\n"
+        "(Use --help to view information about SMTP options.)"
+    )
 
 def request_2sa(icloud, logger):
     """Request two-step authentication. Prompts for SMS or device"""
